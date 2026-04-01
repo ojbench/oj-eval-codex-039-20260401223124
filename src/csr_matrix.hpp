@@ -31,12 +31,13 @@ private:
     std::vector<size_t> indptr;   // size n_rows+1
     std::vector<size_t> indices;  // size nnz
     std::vector<T> data;          // size nnz
-    // helper: find position of column j in row i, returns index in [indptr[i], indptr[i+1]) or npos
-    size_t find_pos(size_t i, size_t j) const {
-        size_t l = indptr[i];
-        size_t r = indptr[i + 1];
-        for (size_t p = l; p < r; ++p) if (indices[p] == j) return p;
-        return static_cast<size_t>(-1);
+    // binary search within row range [l, r) for column j
+    size_t lower_bound_pos(size_t l, size_t r, size_t j) const {
+        while (l < r) {
+            size_t mid = l + ((r - l) >> 1);
+            if (indices[mid] < j) l = mid + 1; else r = mid;
+        }
+        return l;
     }
 
 public:
@@ -90,7 +91,8 @@ public:
         if (i >= n_rows || j >= n_cols) throw invalid_index();
         size_t l = indptr[i];
         size_t r = indptr[i + 1];
-        for (size_t p = l; p < r; ++p) if (indices[p] == j) return data[p];
+        size_t pos = lower_bound_pos(l, r, j);
+        if (pos < r && indices[pos] == j) return data[pos];
         return T();
     }
 
@@ -98,16 +100,14 @@ public:
         if (i >= n_rows || j >= n_cols) throw invalid_index();
         size_t l = indptr[i];
         size_t r = indptr[i + 1];
-        // try update existing
-        for (size_t p = l; p < r; ++p) {
-            if (indices[p] == j) {
-                data[p] = value;
-                return;
-            }
+        size_t pos = lower_bound_pos(l, r, j);
+        if (pos < r && indices[pos] == j) {
+            data[pos] = value;
+            return;
         }
-        // insert new entry at end of row (no delete required by spec)
-        indices.insert(indices.begin() + r, j);
-        data.insert(data.begin() + r, value);
+        // insert new entry at position pos to keep columns sorted (no delete required by spec)
+        indices.insert(indices.begin() + pos, j);
+        data.insert(data.begin() + pos, value);
         ++nnz;
         for (size_t k = i + 1; k < indptr.size(); ++k) ++indptr[k];
     }
@@ -164,4 +164,3 @@ public:
 }
 
 #endif // CSR_MATRIX_HPP
-
